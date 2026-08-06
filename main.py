@@ -9,12 +9,16 @@ time. We add the LoadingScreen and MainWindow as two pages and just flip
 between them — cleaner than manually hiding/showing separate top-level
 windows.
 
-Behavior matched from your JS:
-  - Loading countdown starts immediately (30s), independent of API calls
+Behavior:
+  - Loading countdown starts immediately (20s), independent of API calls
   - API polling ALSO starts immediately in the background
-  - If data arrives before the countdown finishes, it's cached
-    (self._pending_machines) and rendered only once loading finishes
-    -- this mirrors your `pendingMachines` variable exactly.
+  - If a successful fetch (non-empty machine data) arrives before the
+    countdown finishes, it's cached and rendered only once the 20s
+    window completes — same "cache, don't jump ahead" idea as before.
+  - If the 20s window ends with NO successful fetch yet (offline backend,
+    timeout, empty response, etc.), the countdown restarts from 20s and
+    keeps looping — the poller keeps trying in the background the whole
+    time. The main dashboard is NEVER shown without real fetched data.
 """
 import sys
 from PyQt6.QtWidgets import QApplication, QStackedWidget
@@ -33,6 +37,8 @@ class App(QStackedWidget):
 
         self._page_ready = False
         self._pending_machines = None
+        self._got_data = False     # True the moment ANY successful fetch happens
+        self._retry_attempt = 0
 
         self.loading_screen = LoadingScreen()
         self.main_window = MainWindow()
@@ -43,27 +49,39 @@ class App(QStackedWidget):
 
         self.loading_screen.finished.connect(self._on_loading_finished)
 
-        # Background API polling — starts immediately, same as your JS
+        # Background API polling — starts immediately and keeps running
+        # for the lifetime of the app, success or failure.
         self.worker = ApiWorker()
         self.worker.machines_received.connect(self._on_machines)
         self.worker.ip_received.connect(self.main_window.set_ip)
+        self.worker.online_status.connect(self._on_online_status)
         self.worker.online_status.connect(self.main_window.set_online)
         self.worker.start()
 
         self.loading_screen.start()
 
+    def _on_online_status(self, online: bool):
+        # api_worker only emits online=True alongside real, non-empty data,
+        # so this is our single source of truth for "a fetch actually worked".
+        if online:
+            self._got_data = True
+
     def _on_machines(self, machines: list):
+        self._pending_machines = machines
         if self._page_ready:
             self.main_window.render_machines(machines)
-        else:
-            self._pending_machines = machines  # cache, like JS pendingMachines
 
     def _on_loading_finished(self):
-        self._page_ready = True
-        self.setCurrentWidget(self.main_window)
-        if self._pending_machines is not None:
+        if self._got_data and self._pending_machines:
+            # Success within this window -> show the dashboard now.
+            self._page_ready = True
+            self.setCurrentWidget(self.main_window)
             self.main_window.render_machines(self._pending_machines)
-            self._pending_machines = None
+        else:
+            # No successful fetch yet -> loop the countdown and keep trying.
+            # The worker thread is untouched and keeps polling in the background.
+            self._retry_attempt += 1
+            self.loading_screen.start(retry_attempt=self._retry_attempt)
 
     def closeEvent(self, event):
         self.worker.stop()

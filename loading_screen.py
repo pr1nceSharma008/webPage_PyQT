@@ -19,7 +19,7 @@ from PyQt6.QtGui import QPainter, QPen, QColor, QFont, QConicalGradient
 
 import theme
 
-LOADING_DURATION = 30  # seconds — matches your JS LOADING_DURATION
+LOADING_DURATION = 20  # seconds - the countdown length before the main dashboard is shown
 
 LOAD_MESSAGES = [
     "Connecting to machine data…",
@@ -27,6 +27,14 @@ LOAD_MESSAGES = [
     "Loading shift performance…",
     "Syncing machine states…",
     "Almost ready…",
+]
+
+RETRY_MESSAGES = [
+    "Could not reach backend…",
+    "Retrying connection…",
+    "Waiting for machine data…",
+    "Still trying to connect…",
+    "Checking backend again…",
 ]
 
 
@@ -76,6 +84,7 @@ class LoadingScreen(QWidget):
     def __init__(self):
         super().__init__()
         self._remaining = LOADING_DURATION
+        self._retry_attempt = 0
         self._build_ui()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
@@ -91,15 +100,18 @@ class LoadingScreen(QWidget):
         outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         outer.setSpacing(28)
 
-        title = QLabel("Digital-Sync | Machine Monitoring")
+        title = QLabel(
+            f'Digital-<span style="color:{theme.COLORS["sky_500"]};">Sync</span>'
+            ' | Machine Monitoring'
+        )
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setFont(QFont("Segoe UI", 26, QFont.Weight.Black))
+        title.setFont(QFont("Segoe UI", 40, QFont.Weight.Black))
         title.setStyleSheet(f"background: transparent; color: {theme.COLORS['white']};")
 
-        subtitle = QLabel("INITIALIZING SYSTEM")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-        subtitle.setStyleSheet(f"background: transparent; color: {theme.COLORS['slate_600']}; letter-spacing: 4px;")
+        self.subtitle = QLabel("INITIALIZING SYSTEM")
+        self.subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.subtitle.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        self.subtitle.setStyleSheet(f"background: transparent; color: {theme.COLORS['slate_300']}; letter-spacing: 4px;")
 
         # Ring + centered number, stacked using a plain QWidget with two children
         ring_wrap = QWidget()
@@ -122,15 +134,38 @@ class LoadingScreen(QWidget):
 
         self.msg_label = QLabel(LOAD_MESSAGES[0])
         self.msg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.msg_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         self.msg_label.setStyleSheet(f"background: transparent; color: {theme.COLORS['slate_400_txt']}; font-weight: 600;")
 
+        self.retry_label = QLabel("")
+        self.retry_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.retry_label.setStyleSheet(f"background: transparent; color: {theme.COLORS['yellow_400']}; font-weight: 700;")
+        self.retry_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+
         outer.addWidget(title)
-        outer.addWidget(subtitle)
+        outer.addWidget(self.subtitle)
         outer.addWidget(ring_wrap, alignment=Qt.AlignmentFlag.AlignCenter)
         outer.addWidget(self.msg_label)
+        outer.addWidget(self.retry_label)
 
-    def start(self):
+    def start(self, retry_attempt: int = 0):
+        """retry_attempt=0 -> first-ever load. retry_attempt>0 -> a previous
+        20s window ended with no successful API fetch, so we're looping
+        the countdown again while the background poller keeps trying."""
         self._remaining = LOADING_DURATION
+        self._retry_attempt = retry_attempt
+        self.number_label.setText(str(LOADING_DURATION))
+        self.ring.set_fraction(0.0)
+
+        if retry_attempt > 0:
+            self.subtitle.setText("RECONNECTING")
+            self.msg_label.setText(RETRY_MESSAGES[0])
+            self.retry_label.setText(f"Attempt {retry_attempt} — no response from backend yet")
+        else:
+            self.subtitle.setText("INITIALIZING SYSTEM")
+            self.msg_label.setText(LOAD_MESSAGES[0])
+            self.retry_label.setText("")
+
         self._timer.start(1000)  # 1000ms = 1s, like setInterval(fn, 1000)
 
     def _tick(self):
@@ -140,11 +175,9 @@ class LoadingScreen(QWidget):
         elapsed_fraction = (LOADING_DURATION - self._remaining) / LOADING_DURATION
         self.ring.set_fraction(elapsed_fraction)
 
-        msg_idx = min(
-            int(elapsed_fraction * len(LOAD_MESSAGES)),
-            len(LOAD_MESSAGES) - 1,
-        )
-        self.msg_label.setText(LOAD_MESSAGES[msg_idx])
+        messages = RETRY_MESSAGES if self._retry_attempt > 0 else LOAD_MESSAGES
+        msg_idx = min(int(elapsed_fraction * len(messages)), len(messages) - 1)
+        self.msg_label.setText(messages[msg_idx])
 
         if self._remaining <= 0:
             self._timer.stop()

@@ -10,13 +10,19 @@ cards already there (cheap, no flicker) — same "patch, don't rebuild"
 philosophy as your patchCard().
 """
 from datetime import datetime
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QGraphicsOpacityEffect
 )
 from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation
+from PyQt6.QtGui import QPixmap, QFont
 
 import theme
 from machine_card import MachineCard
+
+# Resolved relative to THIS file's folder, so it works no matter what
+# directory you launch `python main.py` from.
+LOGO_PATH = Path(__file__).parent / "Assets" / "hogonas_logo.jpg"
 
 
 class LiveIndicator(QWidget):
@@ -31,7 +37,7 @@ class LiveIndicator(QWidget):
         self.dot = QLabel()
         self.dot.setFixedSize(12, 12)
         self.text = QLabel("Online")
-        self.text.setStyleSheet(f"background: transparent; color: {theme.COLORS['black']}; font-weight: 600;")
+        self.text.setStyleSheet(f"background: transparent; color: {theme.COLORS['black']}; font-weight: 600; font-size: 20px;")
 
         layout.addWidget(self.dot)
         layout.addWidget(self.text)
@@ -59,6 +65,43 @@ class LiveIndicator(QWidget):
             self._opacity_effect.setOpacity(1.0)
 
 
+def make_logo_label(max_height: int = 48) -> QLabel:
+    """
+    Loads Assets/logo.jpg into a QLabel as a QPixmap, scaled to fit the
+    navbar without distortion.
+
+    NEW CONCEPT: QPixmap
+    -------------------------
+    QLabel can hold either TEXT (setText) or an IMAGE (setPixmap) — never
+    both meaningfully at once. QPixmap is Qt's in-memory image type, the
+    equivalent of an <img> element's decoded bitmap. Unlike CSS's
+    object-fit: contain, PyQt has no automatic "fit inside this box while
+    keeping aspect ratio" — you compute that manually with
+    .scaledToHeight(), which preserves aspect ratio by construction
+    (only one dimension is given; the other follows proportionally).
+    """
+    label = QLabel()
+    label.setStyleSheet("background: transparent;")
+
+    if LOGO_PATH.exists():
+        pixmap = QPixmap(str(LOGO_PATH))
+        if not pixmap.isNull():
+            scaled = pixmap.scaledToHeight(
+                max_height, Qt.TransformationMode.SmoothTransformation
+            )
+            label.setPixmap(scaled)
+            return label
+
+    # Fallback: file missing or failed to decode — don't crash, just warn
+    # in the console and show the old text placeholder instead.
+    print(f"[Navbar] Logo not found or unreadable at: {LOGO_PATH} — using text fallback.")
+    label.setText("Höganäs")
+    label.setStyleSheet(
+        f"background: transparent; color: {theme.COLORS['sky_500']}; font-weight: 900; font-size: 18px;"
+    )
+    return label
+
+
 class Navbar(QFrame):
     def __init__(self):
         super().__init__()
@@ -69,11 +112,14 @@ class Navbar(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(24, 0, 24, 0)
 
-        self.logo_label = QLabel("Höganäs")
-        self.logo_label.setStyleSheet(f"background: transparent; color: {theme.COLORS['sky_500']}; font-weight: 900; font-size: 18px;")
+        self.logo_label = make_logo_label(max_height=48)
 
-        title = QLabel("Digital-Sync | Machine Monitoring")
-        title.setStyleSheet(f"background: transparent; color: {theme.COLORS['black']}; font-weight: 800; font-size: 22px;")
+        title = QLabel(
+            f'Digital-<span style="color:{theme.COLORS["sky_500"]};">Sync</span>'
+            ' | Machine Monitoring'
+        )
+        # title.setFont(QFont("Segoe UI", 30, QFont.Weight.Black))
+        title.setStyleSheet(f"background: transparent; color: {theme.COLORS['black']}; font-weight: 800; font-size: 40px;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.live = LiveIndicator()
@@ -82,13 +128,13 @@ class Navbar(QFrame):
         right_box.setSpacing(0)
         time_row = QHBoxLayout()
         self.clock_label = QLabel("")
-        self.clock_label.setStyleSheet(f"background: transparent; color: {theme.COLORS['black']}; font-weight: 700; font-family: Consolas;")
+        self.clock_label.setStyleSheet(f"background: transparent; color: {theme.COLORS['black']}; font-weight: 700; font-family: Consolas; font-size: 24px;")
         self.date_label = QLabel("")
-        self.date_label.setStyleSheet(f"background: transparent; color: {theme.COLORS['black']}; font-weight: 600;")
+        self.date_label.setStyleSheet(f"background: transparent; color: {theme.COLORS['black']}; font-weight: 600; font-size: 16px;")
         time_row.addWidget(self.clock_label)
         time_row.addWidget(self.date_label)
         self.ip_label = QLabel("IP: —")
-        self.ip_label.setStyleSheet(f"background: transparent; color: {theme.COLORS['black']}; font-size: 10px;")
+        self.ip_label.setStyleSheet(f"background: transparent; color: {theme.COLORS['black']}; font-size: 16px;")
         self.ip_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         right_box.addLayout(time_row)
         right_box.addWidget(self.ip_label)

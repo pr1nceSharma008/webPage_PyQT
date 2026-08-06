@@ -103,3 +103,31 @@ QFrame#shiftCard {{
 """
 
 MACHINE_NAME_QSS = f"background: transparent; color: {COLORS['sky_400']}; font-weight: 800;"
+
+# ── Font sizes, tuned for readability from across a factory floor ──
+# Mirrors your CSS clamp() split: .single-machine vs .two-machines get
+# different scales since two cards share the same screen width.
+FONT_SIZES = {
+    False: {  # single machine on screen — biggest text, most room to spare
+        "machine_name": 72,
+        "status_text": 96,
+        "stop_reason": 32,
+        "oee_label": 28,
+        "oee_value": 96,
+        "total_downtime": 40,
+        "shift_label": 20,
+        "shift_oee": 60,
+        "shift_downtime": 28,
+    },
+    True: {  # two machines side by side — still large, but width-constrained
+        "machine_name": 60,
+        "status_text": 64,
+        "stop_reason": 22,
+        "oee_label": 22,
+        "oee_value": 64,
+        "total_downtime": 30,
+        "shift_label": 16,
+        "shift_oee": 44,
+        "shift_downtime": 20,
+    },
+}
